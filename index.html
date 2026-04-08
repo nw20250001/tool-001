@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>裂縫偵測系統</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;600;700&family=Noto+Sans+TC:wght@300;400;700&display=swap');
+
+  :root {
+    --bg: #0a0c0f;
+    --surface: #111418;
+    --border: #1e2530;
+    --accent: #00e5ff;
+    --accent2: #ff3d57;
+    --warn: #ffb300;
+    --success: #00e676;
+    --text: #e8edf2;
+    --muted: #4a5568;
+    --panel: rgba(16,20,28,0.92);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Header ── */
+  .header {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+  }
+  .logo {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.3rem; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: var(--accent);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .logo-icon { width: 22px; height: 22px; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Camera View ── */
+  .camera-wrap {
+    position: relative; z-index: 5;
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    background: #000;
+  }
+
+  #video, #canvas-overlay {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  #canvas-overlay { pointer-events: none; }
+
+  /* Scan frame */
+  .scan-frame {
+    position: absolute;
+    width: min(80vw, 320px); height: min(80vw, 320px);
+    pointer-events: none; z-index: 20;
+  }
+  .scan-frame::before, .scan-frame::after,
+  .scan-frame .c2::before, .scan-frame .c2::after {
+    content: '';
+    position: absolute;
+    width: 24px; height: 24px;
+    border-color: var(--accent);
+    border-style: solid;
+  }
+  .scan-frame::before  { top: 0; left: 0;   border-width: 2px 0 0 2px; }
+  .scan-frame::after   { top: 0; right: 0;  border-width: 2px 2px 0 0; }
+  .scan-frame .c2::before { bottom: 0; left: 0;  border-width: 0 0 2px 2px; }
+  .scan-frame .c2::after  { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+  /* Scan line animation */
+  .scan-line {
+    position: absolute; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: scan 2.5s ease-in-out infinite;
+    top: 0;
+  }
+  @keyframes scan {
+    0%   { top: 0%; opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  /* Idle placeholder */
+  .idle-placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; color: var(--muted);
+    position: absolute; inset: 0;
+    pointer-events: none;
+  }
+  .idle-icon { font-size: 3.5rem; opacity: 0.4; }
+  .idle-text { font-size: 0.85rem; letter-spacing: 2px; text-transform: uppercase; }
+
+  /* ── Result Badge ── */
+  .result-badge {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    padding: 6px 18px;
+    border-radius: 4px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1rem; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    z-index: 30; display: none;
+    backdrop-filter: blur(8px);
+    border: 1px solid currentColor;
+  }
+  .result-badge.crack    { color: var(--accent2); background: rgba(255,61,87,0.15); display: block; }
+  .result-badge.safe     { color: var(--success);  background: rgba(0,230,118,0.12); display: block; }
+  .result-badge.warning  { color: var(--warn);     background: rgba(255,179,0,0.12); display: block; }
+
+  /* ── Bottom Panel ── */
+  .bottom-panel {
+    position: relative; z-index: 10;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding: 16px 18px 28px;
+  }
+
+  /* Result metrics */
+  .metrics {
+    display: grid; grid-template-columns: repeat(3,1fr);
+    gap: 10px; margin-bottom: 16px;
+  }
+  .metric {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 8px;
+    text-align: center;
+  }
+  .metric-val {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.4rem; font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .metric-val.danger { color: var(--accent2); }
+  .metric-val.warn   { color: var(--warn); }
+  .metric-label {
+    font-size: 0.65rem; color: var(--muted);
+    margin-top: 4px; letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Buttons */
+  .btn-row {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 12px; align-items: center;
+  }
+  .btn-capture {
+    background: var(--accent);
+    color: #000;
+    border: none; border-radius: 8px;
+    padding: 14px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1rem; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    cursor: pointer;
+    transition: transform .1s, box-shadow .2s;
+    box-shadow: 0 0 20px rgba(0,229,255,0.3);
+    position: relative; overflow: hidden;
+  }
+  .btn-capture:active { transform: scale(0.97); }
+  .btn-capture:disabled {
+    background: var(--muted); box-shadow: none; cursor: not-allowed;
+  }
+  .btn-capture::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
+    transform: translateX(-100%);
+    transition: transform .4s;
+  }
+  .btn-capture:not(:disabled):hover::after { transform: translateX(100%); }
+
+  .btn-toggle {
+    width: 50px; height: 50px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 1.2rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color .2s, background .2s;
+  }
+  .btn-toggle.active { border-color: var(--accent); background: rgba(0,229,255,0.1); }
+
+  /* Analysis log */
+  .log-section { margin-top: 14px; }
+  .log-title {
+    font-size: 0.65rem; color: var(--muted);
+    letter-spacing: 2px; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .log-list {
+    max-height: 64px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .log-item {
+    font-size: 0.72rem; color: var(--muted);
+    padding: 2px 0;
+    display: flex; gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    animation: fadeIn .3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  .log-item .ts { color: var(--accent); font-family: 'Rajdhani', sans-serif; }
+  .log-item.err .msg { color: var(--accent2); }
+  .log-item.ok  .msg { color: var(--success); }
+  .log-item.wrn .msg { color: var(--warn); }
+
+  /* Loading spinner overlay */
+  .analyzing-overlay {
+    position: absolute; inset: 0;
+    background: rgba(10,12,15,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+  }
+  .analyzing-overlay.show { display: flex; }
+  .spinner {
+    width: 48px; height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .analyzing-text {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.9rem; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--accent);
+  }
+
+  /* Permission screen */
+  .perm-screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 32px; gap: 20px; text-align: center;
+  }
+  .perm-icon { font-size: 3rem; }
+  .perm-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.4rem; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .perm-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+  .btn-perm {
+    background: var(--accent); color: #000;
+    border: none; border-radius: 8px;
+    padding: 14px 32px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1rem; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  /* Crack highlight canvas */
+  #canvas-overlay { mix-blend-mode: screen; }
+</style>
+</head>
+<body>
+
+<!-- Permission Screen -->
+<div class="perm-screen" id="permScreen">
+  <div class="perm-icon">📷</div>
+  <div class="perm-title">需要相機權限</div>
+  <div class="perm-desc">本系統需要使用您的相機<br>來拍攝並分析牆壁裂縫狀況</div>
+  <button class="btn-perm" id="btnPerm">啟動相機</button>
+</div>
+
+<!-- Header -->
+<header class="header">
+  <div class="logo">
+    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 9l2-2 4 4 4-6 4 3 4-4"/>
+      <rect x="2" y="2" width="20" height="20" rx="2" stroke-opacity=".3"/>
+    </svg>
+    CRACKDET
+  </div>
+  <div class="status-dot" id="statusDot"></div>
+</header>
+
+<!-- Camera View -->
+<div class="camera-wrap" id="cameraWrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas-overlay" id="canvasOverlay"></canvas>
+
+  <!-- Idle placeholder -->
+  <div class="idle-placeholder" id="idlePlaceholder">
+    <div class="idle-icon">🔍</div>
+    <div class="idle-text">等待相機啟動</div>
+  </div>
+
+  <!-- Scan frame (shown when camera active) -->
+  <div class="scan-frame" id="scanFrame" style="display:none">
+    <div class="c2"></div>
+    <div class="scan-line"></div>
+  </div>
+
+  <!-- Result badge -->
+  <div class="result-badge" id="resultBadge"></div>
+
+  <!-- Analyzing overlay -->
+  <div class="analyzing-overlay" id="analyzingOverlay">
+    <div class="spinner"></div>
+    <div class="analyzing-text">AI 分析中...</div>
+  </div>
+</div>
+
+<!-- Bottom Panel -->
+<div class="bottom-panel">
+  <!-- Metrics -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-val" id="mConfidence">--</div>
+      <div class="metric-label">裂縫信心</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val" id="mSeverity">--</div>
+      <div class="metric-label">嚴重程度</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val" id="mCount">0</div>
+      <div class="metric-label">偵測次數</div>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="btn-row">
+    <button class="btn-capture" id="btnCapture" disabled>拍照分析</button>
+    <button class="btn-toggle" id="btnAuto" title="自動偵測">⚡</button>
+  </div>
+
+  <!-- Log -->
+  <div class="log-section">
+    <div class="log-title">分析紀錄</div>
+    <div class="log-list" id="logList"></div>
+  </div>
+</div>
+
+<!-- Hidden canvas for capture -->
+<canvas id="captureCanvas" style="display:none"></canvas>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const state = {
+  stream: null,
+  autoMode: false,
+  autoTimer: null,
+  count: 0,
+  analyzing: false
+};
+
+// ── Camera ──────────────────────────────────────────────
+$('btnPerm').addEventListener('click', startCamera);
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    state.stream = stream;
+    const video = $('video');
+    video.srcObject = stream;
+    await video.play();
+
+    $('permScreen').style.display = 'none';
+    $('idlePlaceholder').style.display = 'none';
+    $('scanFrame').style.display = 'block';
+    $('btnCapture').disabled = false;
+
+    addLog('ok', '相機已啟動，準備分析');
+    resizeOverlayCanvas();
+  } catch(e) {
+    addLog('err', '相機啟動失敗：' + e.message);
+    $('permScreen').querySelector('.perm-desc').textContent = '無法存取相機，請確認瀏覽器權限設定';
+  }
+}
+
+function resizeOverlayCanvas() {
+  const wrap = $('cameraWrap');
+  const cv = document.getElementById('canvas-overlay');
+  cv.width = wrap.clientWidth;
+  cv.height = wrap.clientHeight;
+}
+window.addEventListener('resize', resizeOverlayCanvas);
+
+// ── Capture & Analyze ────────────────────────────────────
+$('btnCapture').addEventListener('click', () => captureAndAnalyze());
+
+$('btnAuto').addEventListener('click', () => {
+  state.autoMode = !state.autoMode;
+  $('btnAuto').classList.toggle('active', state.autoMode);
+  if (state.autoMode) {
+    addLog('ok', '自動偵測已啟用 (每5秒)');
+    state.autoTimer = setInterval(captureAndAnalyze, 5000);
+  } else {
+    clearInterval(state.autoTimer);
+    addLog('wrn', '自動偵測已停用');
+  }
+});
+
+async function captureAndAnalyze() {
+  if (state.analyzing || !state.stream) return;
+  state.analyzing = true;
+  $('btnCapture').disabled = true;
+  $('analyzingOverlay').classList.add('show');
+
+  // Capture frame
+  const video = $('video');
+  const cc = $('captureCanvas');
+  cc.width = video.videoWidth || 640;
+  cc.height = video.videoHeight || 480;
+  const ctx = cc.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  const imageData = cc.toDataURL('image/jpeg', 0.8);
+
+  try {
+    const result = await callClaudeAPI(imageData);
+    displayResult(result);
+  } catch(e) {
+    addLog('err', 'API錯誤：' + e.message);
+    hideResult();
+  } finally {
+    state.analyzing = false;
+    if (!state.autoMode) $('btnCapture').disabled = false;
+    $('analyzingOverlay').classList.remove('show');
+  }
+}
+
+// ── Claude API ───────────────────────────────────────────
+async function callClaudeAPI(imageDataUrl) {
+  const base64 = imageDataUrl.split(',')[1];
+
+  const prompt = `你是一個專業的建築結構安全AI檢測系統，專門分析牆壁裂縫。
+
+請分析這張牆壁照片，判斷是否有裂縫存在，並以純JSON格式回應（不要加任何markdown）：
+
+{
+  "hasCrack": true/false,
+  "confidence": 0~100的整數（偵測到裂縫的信心度%）,
+  "severity": "無" | "輕微" | "中度" | "嚴重",
+  "severityScore": 0~100的整數,
+  "crackType": "無裂縫" | "髮絲裂縫" | "結構裂縫" | "剪力裂縫" | "沉陷裂縫",
+  "description": "30字以內的中文描述",
+  "recommendation": "10字以內的中文建議行動"
+}`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 400,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+          { type: 'text', text: prompt }
+        ]
+      }]
+    })
+  });
+
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  const text = data.content.map(b => b.text || '').join('').trim();
+  const clean = text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
+// ── Display Result ───────────────────────────────────────
+function displayResult(r) {
+  state.count++;
+  $('mCount').textContent = state.count;
+
+  const conf = r.confidence ?? 0;
+  const sevScore = r.severityScore ?? 0;
+
+  $('mConfidence').textContent = conf + '%';
+  $('mConfidence').className = 'metric-val' + (conf > 70 ? ' danger' : conf > 40 ? ' warn' : '');
+
+  $('mSeverity').textContent = r.severity || '--';
+  $('mSeverity').className = 'metric-val' + (
+    r.severity === '嚴重' ? ' danger' :
+    r.severity === '中度' ? ' warn' : ''
+  );
+
+  const badge = $('resultBadge');
+  badge.className = 'result-badge';
+
+  if (r.hasCrack) {
+    if (r.severity === '嚴重' || r.severity === '中度') {
+      badge.textContent = '⚠ 發現裂縫 — ' + r.severity;
+      badge.classList.add('crack');
+      addLog('err', `[${r.crackType}] ${r.description} → ${r.recommendation}`);
+    } else {
+      badge.textContent = '△ 輕微裂縫';
+      badge.classList.add('warning');
+      addLog('wrn', `[${r.crackType}] ${r.description} → ${r.recommendation}`);
+    }
+    drawCrackOverlay(conf);
+  } else {
+    badge.textContent = '✓ 牆面正常';
+    badge.classList.add('safe');
+    clearOverlay();
+    addLog('ok', `牆面狀況良好 (信心 ${conf}%)`);
+  }
+}
+
+function hideResult() {
+  $('resultBadge').className = 'result-badge';
+  clearOverlay();
+}
+
+// ── Canvas Overlay (crack visualization) ────────────────
+function drawCrackOverlay(intensity) {
+  const cv = document.getElementById('canvas-overlay');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  const w = cv.width, h = cv.height;
+  const alpha = Math.min(intensity / 100, 0.8);
+
+  // Red vignette for danger
+  const grad = ctx.createRadialGradient(w/2, h/2, h*0.2, w/2, h/2, h*0.7);
+  grad.addColorStop(0, 'rgba(255,61,87,0)');
+  grad.addColorStop(1, `rgba(255,61,87,${alpha * 0.4})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Simulated crack lines
+  const numCracks = Math.floor(intensity / 20) + 1;
+  ctx.strokeStyle = `rgba(255,61,87,${alpha * 0.7})`;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = 'rgba(255,61,87,0.8)';
+  ctx.shadowBlur = 6;
+
+  for (let i = 0; i < numCracks; i++) {
+    const seed = i * 137.5;
+    const sx = w * (0.3 + 0.4 * Math.sin(seed));
+    const sy = h * (0.2 + 0.6 * Math.cos(seed * 0.7));
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    let cx = sx, cy = sy;
+    for (let j = 0; j < 8; j++) {
+      cx += (Math.random() - 0.5) * 60;
+      cy += Math.random() * 30 + 10;
+      ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function clearOverlay() {
+  const cv = document.getElementById('canvas-overlay');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+}
+
+// ── Log ──────────────────────────────────────────────────
+function addLog(type, msg) {
+  const now = new Date();
+  const ts = now.toTimeString().slice(0,8);
+  const list = $('logList');
+  const item = document.createElement('div');
+  item.className = `log-item ${type === 'err' ? 'err' : type === 'ok' ? 'ok' : 'wrn'}`;
+  item.innerHTML = `<span class="ts">${ts}</span><span class="msg">${msg}</span>`;
+  list.prepend(item);
+  if (list.children.length > 20) list.removeChild(list.lastChild);
+}
+
+// Init
+addLog('ok', '系統就緒，請啟動相機');
+</script>
+</body>
+</html>
