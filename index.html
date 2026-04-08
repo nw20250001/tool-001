@@ -3,535 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>壁裂AI - 牆壁裂縫即時辨識</title>
+    <title>壁裂AI - 真實AI版</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
-        
-        :root {
-            --tw-color-primary: #0ea5e9;
-        }
-        
-        * {
-            font-family: 'Noto Sans TC', system-ui, -apple-system, sans-serif;
-        }
-        
-        .mobile-frame {
-            max-width: 420px;
-            margin: 0 auto;
-            background: #111827;
-            border-radius: 48px;
-            box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4);
-            overflow: hidden;
-            border: 12px solid #111827;
-            height: 100vh;
-            position: relative;
-        }
-        
-        .status-bar {
-            height: 44px;
-            background: linear-gradient(to right, #0ea5e9, #3b82f6);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: 500;
-            position: relative;
-        }
-        
-        .app-header {
-            background: #0f172a;
-            color: white;
-            padding: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-        }
-        
-        .screen {
-            height: calc(100vh - 44px - 64px);
-            overflow-y: auto;
-            background: #f8fafc;
-        }
-        
-        .canvas-container {
-            position: relative;
-            width: 100%;
-        }
-        
-        .crack-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            pointer-events: none;
-        }
-        
-        .loading-spinner {
-            animation: spin 1.5s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .result-bar {
-            animation: slideUp 0.4s ease forwards;
-        }
+        /* 原本的樣式保持不變...（這裡省略，複製你原本的 style 即可） */
+        .mobile-frame { /* ... 原本的樣式 ... */ }
     </style>
 </head>
 <body class="bg-slate-950 flex items-center justify-center min-h-screen">
     <div class="mobile-frame">
-        
-        <!-- 狀態列 -->
-        <div class="status-bar">
-            <div class="flex-1 flex justify-between px-6 text-xs">
-                <span>09:38</span>
-                <span>◎ 5G</span>
-                <span>92% 🔋</span>
-            </div>
-        </div>
+        <!-- 狀態列 + Header 保持不變（複製原本的） -->
 
-        <!-- App Header -->
-        <div class="app-header">
-            <div class="flex items-center gap-2">
-                <div class="w-9 h-9 bg-sky-500 rounded-2xl flex items-center justify-center text-white text-2xl shadow-inner">🔍</div>
-                <div>
-                    <h1 class="text-xl font-bold tracking-tighter">壁裂AI</h1>
-                    <p class="text-sky-300 text-xs -mt-1">牆壁裂縫即時辨識</p>
-                </div>
-            </div>
-            <button onclick="resetApp()" 
-                    class="w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-2xl flex items-center justify-center text-white text-xl transition-colors">
-                ⟳
-            </button>
-        </div>
+        <!-- 其他畫面也保持不變，只修改 analyzeImage 與新增載入模型 -->
 
-        <!-- 主畫面切換 -->
-        
-        <!-- 首頁 -->
-        <div id="screen-home" class="screen flex flex-col items-center justify-center px-6 text-center">
-            <div class="mb-8">
-                <div class="text-8xl mb-6 animate-bounce">📸</div>
-                <h2 class="text-3xl font-bold text-slate-900 mb-2">偵測牆壁裂縫</h2>
-                <p class="text-slate-600 text-lg">使用手機相機拍照，AI 即時分析裂縫</p>
-                <p class="text-slate-500 text-sm mt-6">支援即時相機 • 離線可用 • 準確率 92%</p>
-            </div>
-            
-            <button onclick="startCameraMode()" 
-                    class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-5 px-8 rounded-3xl text-xl shadow-xl shadow-sky-500/30 flex items-center justify-center gap-3 transition-all active:scale-95">
-                <span>📷</span>
-                <span>立即使用相機拍照</span>
-            </button>
-            
-            <div class="mt-6 text-slate-400 text-sm flex items-center gap-2">
-                <div class="flex-1 h-px bg-slate-300"></div>
-                或
-                <div class="flex-1 h-px bg-slate-300"></div>
-            </div>
-            
-            <button onclick="useGallery()" 
-                    class="mt-4 w-full border border-slate-300 text-slate-700 font-medium py-4 px-8 rounded-3xl flex items-center justify-center gap-2 hover:bg-slate-100">
-                <span>🖼️</span>
-                從相簿選擇照片
-            </button>
-            
-            <div class="mt-auto text-xs text-slate-400 pt-8 flex items-center gap-1">
-                <span class="text-emerald-500">●</span>
-                模擬版 • 真實APP可整合 TensorFlow.js 模型
-            </div>
-        </div>
+        <script>
+            let model = null;
+            let currentStream = null;
+            let capturedDataURL = null;
 
-        <!-- 相機畫面 -->
-        <div id="screen-camera" class="screen hidden flex-col">
-            <div class="flex-1 relative bg-black flex items-center justify-center">
-                <video id="video" class="w-full h-full object-cover" autoplay playsinline></video>
+            // ========== 新增：載入真實AI模型 ==========
+            async function loadAIModel() {
+                const status = document.createElement('div');
+                status.style.cssText = 'position:fixed; top:20px; left:50%; transform:translateX(-50%); background:#0ea5e9; color:white; padding:12px 24px; border-radius:9999px; font-size:14px;';
+                status.textContent = '🔄 正在載入AI模型...';
+                document.body.appendChild(status);
+
+                try {
+                    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+                    // 這裡改成你自己的 model.json 網址
+                    model = await tf.loadGraphModel('https://你的網址/web_model/model.json');
+                    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+                    
+                    console.log('%c✅ 真實AI模型載入成功！', 'color:#10b981; font-size:16px');
+                    status.textContent = '✅ AI模型已準備好';
+                    setTimeout(() => status.remove(), 1500);
+                } catch (e) {
+                    status.style.background = '#ef4444';
+                    status.textContent = '❌ 模型載入失敗，請檢查網址';
+                    console.error(e);
+                }
+            }
+
+            // ========== 修改：真實AI分析 ==========
+            async function analyzeImage() {
+                if (!model) {
+                    alert('請先等待AI模型載入完成！');
+                    return;
+                }
+                showScreen('screen-result');
+
+                const canvas = document.getElementById('result-canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
                 
-                <!-- 相機輔助線 -->
-                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div class="w-80 h-80 border-2 border-white/40 rounded-3xl flex items-center justify-center">
-                        <div class="text-white/30 text-xs font-mono tracking-widest">WALL CRACK AI</div>
-                    </div>
-                </div>
-                
-                <div class="absolute bottom-8 left-0 right-0 flex justify-center gap-6">
-                    <button onclick="stopCamera()" 
-                            class="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg">✕</button>
+                img.onload = async function() {
+                    // 設定 canvas
+                    const maxWidth = 380;
+                    const ratio = img.width / img.height;
+                    canvas.width = maxWidth;
+                    canvas.height = maxWidth / ratio;
                     
-                    <button onclick="capturePhoto()" 
-                            class="w-20 h-20 bg-white rounded-3xl flex items-center justify-center text-5xl shadow-2xl shadow-sky-500/50 border-4 border-white active:scale-95 transition-transform">📸</button>
-                    
-                    <button onclick="switchCamera()" 
-                            class="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-3xl text-white shadow-lg">🔄</button>
-                </div>
-            </div>
-            
-            <div class="bg-slate-900 text-white text-center py-3 text-sm font-medium">
-                請對準牆壁裂縫，保持穩定的光線
-            </div>
-        </div>
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        <!-- 照片預覽畫面 -->
-        <div id="screen-preview" class="screen hidden p-4 flex flex-col">
-            <div class="flex justify-between items-center mb-4">
-                <button onclick="backToHome()" class="text-sky-600 font-medium flex items-center gap-1">
-                    ← 返回
-                </button>
-                <h3 class="font-semibold text-lg">照片預覽</h3>
-                <button onclick="analyzeImage()" 
-                        class="bg-emerald-500 text-white px-6 py-2 rounded-2xl font-medium flex items-center gap-2">
-                    <span>🚀</span> 開始AI辨識
-                </button>
-            </div>
-            
-            <div class="flex-1 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center border border-slate-200">
-                <img id="preview-image" class="max-h-full max-w-full object-contain" alt="預覽照片">
-            </div>
-            
-            <div class="mt-4 text-xs text-slate-500 text-center">
-                點擊下方按鈕讓AI分析裂縫位置與嚴重程度
-            </div>
-        </div>
+                    // === 真實AI推論開始 ===
+                    const inputTensor = tf.browser.fromPixels(canvas)
+                        .resizeNearestNeighbor([320, 320])   // 模型輸入尺寸（依你的模型調整）
+                        .toFloat()
+                        .div(255.0)
+                        .expandDims(0);
 
-        <!-- 分析結果畫面 -->
-        <div id="screen-result" class="screen hidden flex-col">
-            <div class="flex justify-between items-center px-4 py-4 border-b">
-                <button onclick="backToPreview()" class="text-sky-600 font-medium">← 重新分析</button>
-                <h3 class="font-semibold">AI 辨識結果</h3>
-                <button onclick="saveReport()" class="text-emerald-600 font-medium">📄 儲存報告</button>
-            </div>
-            
-            <div class="flex-1 p-4">
-                <div class="canvas-container rounded-3xl overflow-hidden border-2 border-slate-200 shadow-inner">
-                    <canvas id="result-canvas" class="w-full"></canvas>
-                </div>
-                
-                <!-- 分析資訊 -->
-                <div class="mt-6 space-y-4">
-                    <div class="result-bar bg-white rounded-3xl p-5 shadow-sm">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <div class="flex items-center gap-2 text-emerald-500">
-                                    <span class="text-2xl">📍</span>
-                                    <span class="font-semibold text-lg">偵測到 3 處裂縫</span>
-                                </div>
-                                <p id="crack-details" class="text-slate-600 mt-1 text-sm">主要裂縫位於右下角，長度約 28cm</p>
-                            </div>
-                            <div class="text-right">
-                                <div class="text-xs text-slate-400">風險等級</div>
-                                <div id="risk-level" class="text-4xl font-bold text-orange-500">中</div>
-                            </div>
-                        </div>
-                    </div>
+                    const predictions = await model.executeAsync(inputTensor);
                     
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-white rounded-3xl p-4">
-                            <div class="text-xs text-slate-400 mb-1">嚴重程度</div>
-                            <div class="flex items-center gap-3">
-                                <div class="flex-1 h-3 bg-gradient-to-r from-emerald-400 to-orange-400 rounded-3xl relative">
-                                    <div class="absolute top-0 left-[65%] w-3 h-3 bg-white rounded-full shadow border border-white"></div>
-                                </div>
-                                <span id="severity" class="font-bold text-orange-500">65%</span>
-                            </div>
-                        </div>
-                        
-                        <div class="bg-white rounded-3xl p-4">
-                            <div class="text-xs text-slate-400 mb-1">建議</div>
-                            <p id="suggestion" class="text-sm text-slate-700 font-medium">建議 7 天內聯絡專業工程師進行修補</p>
-                        </div>
-                    </div>
-                    
-                    <div onclick="showMoreInfo()" class="text-center text-sky-500 text-sm font-medium cursor-pointer hover:underline">
-                        查看詳細檢測數據與歷史紀錄 →
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 底部按鈕 -->
-            <div class="p-4 border-t bg-white flex gap-3">
-                <button onclick="shareResult()" 
-                        class="flex-1 py-4 border border-slate-300 rounded-3xl text-slate-700 font-medium flex justify-center items-center gap-2">
-                    📤 分享結果
-                </button>
-                <button onclick="resetApp()" 
-                        class="flex-1 py-4 bg-sky-500 text-white rounded-3xl font-semibold">
-                    再次拍照
-                </button>
-            </div>
-        </div>
+                    // 假設你的模型輸出格式為：
+                    // predictions[0] = boxes (4, num_boxes)
+                    // predictions[1] = scores
+                    // predictions[2] = classes
+                    // （不同模型輸出不同，請依實際調整）
+                    const boxes = await predictions[0].array();
+                    const scores = await predictions[1].array();
+                    const classes = await predictions[2].array();
+
+                    // 清除 tensor 釋放記憶體
+                    inputTensor.dispose();
+                    predictions.forEach(p => p.dispose());
+
+                    // 畫裂縫框（紅色）
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 5;
+                    ctx.shadowColor = '#f43f5e';
+                    ctx.shadowBlur = 15;
+
+                    let crackCount = 0;
+                    for (let i = 0; i < boxes[0].length; i++) {
+                        if (scores[0][i] > 0.5) {   // 信心閾值可調整
+                            crackCount++;
+                            const [ymin, xmin, ymax, xmax] = boxes[0][i];
+                            
+                            const x = xmin * canvas.width;
+                            const y = ymin * canvas.height;
+                            const w = (xmax - xmin) * canvas.width;
+                            const h = (ymax - ymin) * canvas.height;
+                            
+                            ctx.beginPath();
+                            ctx.rect(x, y, w, h);
+                            ctx.stroke();
+                            
+                            // 標註信心度
+                            ctx.fillStyle = '#ef4444';
+                            ctx.font = 'bold 14px Noto Sans TC';
+                            ctx.fillText(`裂縫 ${Math.round(scores[0][i]*100)}%`, x, y - 8);
+                        }
+                    }
+
+                    // 更新結果文字
+                    document.getElementById('crack-details').innerHTML = `
+                        <span class="font-semibold">偵測到 <span class="text-red-500">${crackCount}</span> 處裂縫</span><br>
+                        信心度門檻：50% 以上
+                    `;
+                    document.getElementById('severity').textContent = '真實AI計算中...';
+                    document.getElementById('risk-level').textContent = crackCount > 2 ? '高' : '中';
+                };
+                img.src = capturedDataURL;
+            }
+
+            // 其餘函數（startCameraMode、capturePhoto 等）保持不變
+            // ...（複製你原本的 script 其餘部分）...
+
+            // 初始化時自動載入模型
+            window.onload = function() {
+                initTailwind();
+                loadAIModel();   // ← 新增這一行
+                console.log('%c✅ 壁裂AI 真實AI版 已啟動！', 'color:#0ea5e9; font-size:18px');
+            };
+        </script>
     </div>
-
-    <script>
-        // Tailwind 啟動
-        function initTailwind() {
-            tailwind.config = {
-                content: [],
-                theme: { extend: {} }
-            }
-        }
-        
-        // 全域變數
-        let currentStream = null
-        let currentImage = null
-        let currentFacingMode = 'environment'
-        let capturedDataURL = null
-        
-        // 切換畫面
-        function showScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(screen => {
-                screen.classList.add('hidden')
-            })
-            document.getElementById(screenId).classList.remove('hidden')
-        }
-        
-        // 啟動相機
-        async function startCameraMode() {
-            showScreen('screen-camera')
-            
-            const video = document.getElementById('video')
-            
-            try {
-                if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop())
-                }
-                
-                const constraints = {
-                    video: {
-                        facingMode: currentFacingMode,
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }
-                }
-                
-                currentStream = await navigator.mediaDevices.getUserMedia(constraints)
-                video.srcObject = currentStream
-                video.play()
-            } catch (err) {
-                console.error(err)
-                alert('無法存取相機，請確認權限已開啟')
-                showScreen('screen-home')
-            }
-        }
-        
-        // 切換前後鏡頭
-        async function switchCamera() {
-            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment'
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop())
-            }
-            await startCameraMode()
-        }
-        
-        // 停止相機
-        function stopCamera() {
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop())
-                currentStream = null
-            }
-            showScreen('screen-home')
-        }
-        
-        // 拍攝照片
-        function capturePhoto() {
-            const video = document.getElementById('video')
-            const canvas = document.createElement('canvas')
-            canvas.width = video.videoWidth
-            canvas.height = video.videoHeight
-            const ctx = canvas.getContext('2d')
-            ctx.drawImage(video, 0, 0)
-            
-            capturedDataURL = canvas.toDataURL('image/jpeg', 0.92)
-            
-            // 停止相機
-            stopCamera()
-            
-            // 顯示預覽
-            document.getElementById('preview-image').src = capturedDataURL
-            showScreen('screen-preview')
-        }
-        
-        // 從相簿選擇
-        function useGallery() {
-            const input = document.createElement('input')
-            input.type = 'file'
-            input.accept = 'image/*'
-            input.capture = 'camera'
-            
-            input.onchange = function(e) {
-                const file = e.target.files[0]
-                if (!file) return
-                
-                const reader = new FileReader()
-                reader.onload = function(ev) {
-                    capturedDataURL = ev.target.result
-                    document.getElementById('preview-image').src = capturedDataURL
-                    showScreen('screen-preview')
-                }
-                reader.readAsDataURL(file)
-            }
-            input.click()
-        }
-        
-        // 開始AI辨識（模擬）
-        function analyzeImage() {
-            showScreen('screen-result')
-            
-            const canvas = document.getElementById('result-canvas')
-            const ctx = canvas.getContext('2d')
-            
-            const img = new Image()
-            img.onload = function() {
-                // 設定 canvas 大小與圖片比例
-                const maxWidth = 380
-                const ratio = img.width / img.height
-                canvas.width = maxWidth
-                canvas.height = maxWidth / ratio
-                
-                // 繪製原圖
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-                
-                // 模擬裂縫偵測 - 繪製多條不規則裂縫線條
-                ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)'
-                ctx.lineWidth = 4
-                
-                const numCracks = 3 + Math.floor(Math.random() * 3)
-                
-                for (let i = 0; i < numCracks; i++) {
-                    ctx.shadowColor = '#f43f5e'
-                    ctx.shadowBlur = 12
-                    
-                    ctx.beginPath()
-                    
-                    // 隨機起始位置
-                    let x = Math.random() * canvas.width * 0.8 + canvas.width * 0.1
-                    let y = Math.random() * canvas.height * 0.4
-                    
-                    ctx.moveTo(x, y)
-                    
-                    // 繪製裂縫段
-                    const segments = 12 + Math.random() * 8
-                    for (let s = 0; s < segments; s++) {
-                        x += (Math.random() - 0.5) * 55
-                        y += (canvas.height / segments) * (0.8 + Math.random() * 0.6)
-                        ctx.lineTo(Math.max(20, Math.min(canvas.width - 20, x)), y)
-                    }
-                    
-                    ctx.stroke()
-                    
-                    // 額外細裂痕
-                    if (Math.random() > 0.6) {
-                        ctx.lineWidth = 1.5
-                        ctx.shadowBlur = 4
-                        ctx.beginPath()
-                        ctx.moveTo(x - 15, y - 10)
-                        ctx.quadraticCurveTo(
-                            x + (Math.random() * 30 - 15),
-                            y + 25,
-                            x + 30,
-                            y + 5
-                        )
-                        ctx.stroke()
-                        ctx.lineWidth = 4
-                    }
-                }
-                
-                // 隨機標記小裂縫點
-                ctx.fillStyle = 'rgba(249, 115, 22, 0.9)'
-                for (let i = 0; i < 12; i++) {
-                    ctx.save()
-                    ctx.shadowBlur = 8
-                    ctx.shadowColor = '#fb923c'
-                    ctx.beginPath()
-                    ctx.arc(
-                        Math.random() * canvas.width,
-                        Math.random() * canvas.height,
-                        3.5,
-                        0, Math.PI * 2
-                    )
-                    ctx.fill()
-                    ctx.restore()
-                }
-                
-                // 隨機產生結果文字
-                const severities = [42, 58, 65, 71, 83]
-                const riskTexts = ['低', '中', '高']
-                const suggestions = [
-                    '建議 7 天內聯絡專業工程師進行修補',
-                    '裂縫已影響結構安全，請立即處理',
-                    '輕微裂縫，可自行填補觀察'
-                ]
-                
-                document.getElementById('severity').textContent = severities[Math.floor(Math.random()*severities.length)] + '%'
-                document.getElementById('risk-level').textContent = riskTexts[Math.floor(Math.random()*riskTexts.length)]
-                document.getElementById('risk-level').className = `text-4xl font-bold ${Math.random() > 0.6 ? 'text-red-500' : 'text-orange-500'}`
-                document.getElementById('suggestion').textContent = suggestions[Math.floor(Math.random()*suggestions.length)]
-                
-                const crackCount = numCracks + Math.floor(Math.random() * 2)
-                document.getElementById('crack-details').innerHTML = `
-                    <span class="font-semibold">偵測到 <span class="text-red-500">${crackCount}</span> 處裂縫</span><br>
-                    主要裂縫長度約 ${18 + Math.floor(Math.random()*35)}cm • 平均寬度 2.3mm
-                `
-            }
-            img.src = capturedDataURL
-        }
-        
-        // 返回預覽
-        function backToPreview() {
-            showScreen('screen-preview')
-        }
-        
-        // 返回首頁
-        function backToHome() {
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop())
-                currentStream = null
-            }
-            showScreen('screen-home')
-        }
-        
-        // 重置整個APP
-        function resetApp() {
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop())
-                currentStream = null
-            }
-            capturedDataURL = null
-            showScreen('screen-home')
-        }
-        
-        // 儲存報告（模擬下載）
-        function saveReport() {
-            const canvas = document.getElementById('result-canvas')
-            const link = document.createElement('a')
-            link.download = '壁裂AI_檢測報告_' + new Date().toISOString().slice(0,10) + '.jpg'
-            link.href = canvas.toDataURL('image/jpeg', 0.95)
-            link.click()
-            
-            const notif = document.createElement('div')
-            notif.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#10b981; color:white; padding:12px 24px; border-radius:9999px; box-shadow:0 10px 15px -3px rgb(16 185 129); font-weight:600;'
-            notif.textContent = '✅ 報告已儲存到相簿'
-            document.body.appendChild(notif)
-            setTimeout(() => notif.remove(), 2200)
-        }
-        
-        // 分享結果（模擬）
-        function shareResult() {
-            alert('🔗 已複製分享連結！\n\n在真實APP中可直接傳 Line、Messenger 或 Email')
-        }
-        
-        // 更多資訊
-        function showMoreInfo() {
-            alert('📊 詳細數據\n\n• 裂縫走向：垂直 72% • 水平 28%\n• 最大深度估計：4.8mm\n• 結構安全指數：78/100\n• 上次檢測紀錄：2026/03/15\n\n真實版本可串接雲端AI模型與歷史紀錄')
-        }
-        
-        // 初始化
-        window.onload = function() {
-            initTailwind()
-            console.log('%c✅ 壁裂AI 模擬APP 已成功載入！', 'color:#0ea5e9; font-size:18px; font-weight:bold')
-            console.log('手機開啟此 index.html 即可使用相機拍照與裂縫辨識模擬')
-        }
-    </script>
 </body>
 </html>
